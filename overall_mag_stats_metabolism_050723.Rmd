@@ -1,0 +1,923 @@
+---
+title: "Moonmilk - MAG-level stats and metabolisms"
+author: "André Rodrigues Soares"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggnewscale)
+library(patchwork)
+library(kableExtra)
+```
+
+Only MAGs \>= 70% completeness & \<= 10% contamination were kept.
+
+```{r message=FALSE, warning=FALSE}
+hq_mags_mg1 = read_tsv("mgshot_S7938Nr1_DAS_Tool_uBin_curated_checkm2_gt70lt10_IDs", 
+                   col_names = "ID")$ID
+hq_mags_mg2 = read_tsv("mgshot_S7938Nr2_DAS_Tool_uBin_curated_checkm2_gt70lt10_IDs", 
+                   col_names = "ID")$ID
+hq_mags_mg3 = read_tsv("mgshot_S7938Nr3_DAS_Tool_uBin_curated_checkm2_gt70lt10_IDs", 
+                   col_names = "ID")$ID
+```
+
+```{r message=FALSE, warning=FALSE}
+checkm2_mg1 = read_tsv("mgshot_S7938Nr1_quality_report.tsv") %>% 
+  filter(Name %in% hq_mags_mg1) %>% 
+  select(Name, Completeness, Contamination, Genome_Size, GC_Content) %>% 
+  add_column(sample = "mgshot_S7938Nr1")
+
+checkm2_mg2 = read_tsv("mgshot_S7938Nr2_quality_report.tsv") %>% 
+  filter(Name %in% hq_mags_mg2) %>% 
+  select(Name, Completeness, Contamination, Genome_Size, GC_Content) %>% 
+  add_column(sample = "mgshot_S7938Nr2")
+
+checkm2_mg3 = read_tsv("mgshot_S7938Nr3_quality_report.tsv") %>% 
+  filter(Name %in% hq_mags_mg3) %>% 
+  select(Name, Completeness, Contamination, Genome_Size, GC_Content) %>% 
+  add_column(sample = "mgshot_S7938Nr3")
+
+checkm2_all = bind_rows(checkm2_mg1, checkm2_mg2, checkm2_mg3)
+
+checkm2_all %>% 
+  group_by(sample) %>% 
+  summarise(hq_mags = n())
+```
+
+General summary of `checkm2` MAG-level stats
+
+```{r}
+ggplot(checkm2_all, aes(Contamination, Completeness,
+                    size = Genome_Size,
+                    colour = GC_Content*100)) +
+  geom_point(alpha = .6) +
+  facet_wrap(.~sample, nrow = 1) +
+  scale_colour_viridis_c() +
+  scale_size_continuous(labels = scales::comma_format(),
+                        breaks = c(600000,
+                                   1000000,
+                                   2000000,
+                                   4000000,
+                                   6000000,
+                                   8000000)) +
+  labs(x = "Contamination (%)", 
+       y = "Completeness (%)") +
+  theme_bw()
+```
+
+```{r message=FALSE, warning=FALSE}
+gtdbtk_mg1_bac = read_tsv("mgshot_S7938Nr1_gtdbtk.bac120.summary.tsv") %>% 
+  filter(user_genome %in% hq_mags_mg1) %>% 
+  select(user_genome, classification) %>% 
+  add_column(sample = "mgshot_S7938Nr1")
+gtdbtk_mg1_arc = read_tsv("mgshot_S7938Nr1_gtdbtk.ar53.summary.tsv") %>% 
+  filter(user_genome %in% hq_mags_mg1) %>% 
+  select(user_genome, classification) %>% 
+  add_column(sample = "mgshot_S7938Nr1")
+
+gtdbtk_mg2_bac = read_tsv("mgshot_S7938Nr2_gtdbtk.bac120.summary.tsv") %>% 
+  filter(user_genome %in% hq_mags_mg2) %>% 
+  select(user_genome, classification) %>% 
+  add_column(sample = "mgshot_S7938Nr2")
+gtdbtk_mg2_arc = read_tsv("mgshot_S7938Nr2_gtdbtk.ar53.summary.tsv") %>% 
+  filter(user_genome %in% hq_mags_mg2) %>% 
+  select(user_genome, classification) %>% 
+  add_column(sample = "mgshot_S7938Nr2")
+
+gtdbtk_mg3_bac = read_tsv("mgshot_S7938Nr3_gtdbtk.bac120.summary.tsv") %>% 
+  filter(user_genome %in% hq_mags_mg3) %>% 
+  select(user_genome, classification) %>% 
+  add_column(sample = "mgshot_S7938Nr3")
+
+gtdbtk_all = bind_rows(gtdbtk_mg1_bac, gtdbtk_mg1_arc,
+                       gtdbtk_mg2_bac, gtdbtk_mg2_arc,
+                       gtdbtk_mg3_bac) %>% 
+  rename(Name = user_genome) %>% 
+  mutate(classification = str_remove_all(classification,
+                                     paste(c("d__","p__","c__",
+                                             "o__","f__","g__"), 
+                                           collapse = "|"))) %>% 
+  separate(classification, into = c("domain", "phylum", "class",
+                                    "order", "family", "genus"), sep = ";")
+```
+
+```{r}
+all_checkm_gtdbtk = left_join(checkm2_all, gtdbtk_all,
+                              by = c("Name", "sample"))
+```
+
+MAG `checkm` assessments and `gtdb-tk` (release214) taxonomy
+
+```{r}
+all_checkm_gtdbtk %>% 
+  filter(sample == "mgshot_S7938Nr1") %>% 
+  arrange(desc(Completeness), Contamination) %>% 
+  kableExtra::kbl() %>% 
+  kableExtra::kable_classic(full_width = F) %>%
+  save_kable(file = "mgshot_S7938Nr1_checkm2_gtdbtk.png", density = 600,
+             zoom = 1.5)
+```
+
+```{r}
+all_checkm_gtdbtk %>% 
+  filter(sample == "mgshot_S7938Nr2") %>% 
+  arrange(desc(Completeness), Contamination) %>% 
+  kableExtra::kbl() %>% 
+  kableExtra::kable_classic(full_width = T) %>%
+  save_kable(file = "mgshot_S7938Nr2_checkm2_gtdbtk.png", density = 600,
+             zoom = 1.5)
+```
+
+```{r}
+all_checkm_gtdbtk %>% 
+  filter(sample == "mgshot_S7938Nr3") %>% 
+  arrange(desc(Completeness), Contamination) %>% 
+  kableExtra::kbl() %>% 
+  kableExtra::kable_classic(full_width = T) %>%
+  save_kable(file = "mgshot_S7938Nr3_checkm2_gtdbtk.png", density = 600,
+             zoom = 1.5)
+```
+
+```{r fig.height=8, fig.width=10, fig.show="hold", out.width="50%"}
+mg1_checkm_gtdbtk_sum = all_checkm_gtdbtk %>% 
+         filter(sample == "mgshot_S7938Nr1") %>%  
+         select(Name, phylum, class, Contamination, Completeness, Genome_Size) %>% 
+         gather("measure", "values", -phylum, -class,-Name)
+
+ggplot() + 
+  geom_tile(data = mg1_checkm_gtdbtk_sum %>% 
+              filter(measure == "Contamination") %>% 
+              droplevels,
+            aes(measure, Name, fill = values),
+            colour = "black") +
+  scale_fill_gradientn("Contamination", colours = c("green", "yellow","red")) +
+  new_scale_fill() +
+  geom_tile(data = mg1_checkm_gtdbtk_sum %>% 
+              filter(measure == "Completeness") %>% 
+              droplevels,
+            aes(measure, Name, fill = values),
+            colour = "black") +
+  scale_fill_gradientn("Completeness", colours = c("red", "yellow", "green")) +
+  new_scale_fill() +
+  geom_tile(data = mg1_checkm_gtdbtk_sum %>% 
+              filter(measure == "Genome_Size") %>% 
+              droplevels,
+            aes(measure, Name, fill = values),
+            colour = "black") +
+  scale_fill_gradient("Genome_Size", low = "yellow", 
+                      high = "blue") +
+  new_scale_fill() +
+  # geom_point(alpha = .6) +
+  facet_wrap(phylum ~ class, scales = "free_y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1, vjust = 1),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title = element_blank())
+
+mg2_checkm_gtdbtk_sum = all_checkm_gtdbtk %>% 
+         filter(sample == "mgshot_S7938Nr2") %>% 
+         select(Name, phylum, class, Contamination, Completeness, Genome_Size) %>% 
+         gather("measure", "values", -phylum, -class,-Name)
+
+ggplot() + 
+  geom_tile(data = mg2_checkm_gtdbtk_sum %>% 
+              filter(measure == "Contamination") %>% 
+              droplevels,
+            aes(measure, Name, fill = values),
+            colour = "black") +
+  scale_fill_gradientn("Contamination", colours = c("green", "yellow","red")) +
+  new_scale_fill() +
+  geom_tile(data = mg2_checkm_gtdbtk_sum %>% 
+              filter(measure == "Completeness") %>% 
+              droplevels,
+            aes(measure, Name, fill = values),
+            colour = "black") +
+  scale_fill_gradientn("Completeness", colours = c("red", "yellow", "green")) +
+  new_scale_fill() +
+  geom_tile(data = mg2_checkm_gtdbtk_sum %>% 
+              filter(measure == "Genome_Size") %>% 
+              droplevels,
+            aes(measure, Name, fill = values),
+            colour = "black") +
+  scale_fill_gradient("Genome_Size", low = "yellow", 
+                      high = "blue") +
+  new_scale_fill() +
+  # geom_point(alpha = .6) +
+  facet_wrap(phylum ~ class, scales = "free_y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1, vjust = 1),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title = element_blank())
+
+mg3_checkm_gtdbtk_sum = all_checkm_gtdbtk %>% 
+         filter(sample == "mgshot_S7938Nr3") %>% 
+         select(Name, phylum, class, Contamination, Completeness, Genome_Size) %>% 
+         gather("measure", "values", -phylum, -class,-Name)
+
+ggplot() + 
+  geom_tile(data = mg3_checkm_gtdbtk_sum %>% 
+              filter(measure == "Contamination") %>% 
+              droplevels,
+            aes(measure, Name, fill = values),
+            colour = "black") +
+  scale_fill_gradientn("Contamination", colours = c("green", "yellow","red")) +
+  new_scale_fill() +
+  geom_tile(data = mg3_checkm_gtdbtk_sum %>% 
+              filter(measure == "Completeness") %>% 
+              droplevels,
+            aes(measure, Name, fill = values),
+            colour = "black") +
+  scale_fill_gradientn("Completeness", colours = c("red", "yellow", "green")) +
+  new_scale_fill() +
+  geom_tile(data = mg3_checkm_gtdbtk_sum %>% 
+              filter(measure == "Genome_Size") %>% 
+              droplevels,
+            aes(measure, Name, fill = values),
+            colour = "black") +
+  scale_fill_gradient("Genome_Size", low = "yellow", 
+                      high = "blue") +
+  new_scale_fill() +
+  # geom_point(alpha = .6) +
+  facet_wrap(phylum ~ class, scales = "free_y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1, vjust = 1),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title = element_blank())
+```
+
+### MAG relative abundances in the dataset
+
+```{r}
+abund_list = list.files(".", pattern = "_abunds.txt")
+mag_abunds = read_tsv(abund_list, id = "sample", 
+                      col_names = c("Name","rel_abund","mean_cov"), skip = 1) %>% 
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3)) %>% 
+  mutate(sample = str_remove(sample, "_coverm_mag_abunds.txt"))
+
+all_checkm_gtdbtk_abunds_pco = left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")) %>% 
+  unite("pco",phylum,class,
+        sep = ", ", remove = F) %>% 
+  ungroup() %>% 
+  select(-Name) %>%
+  group_by(pco, sample) %>% 
+  reframe(rel_abund = rel_abund,
+          sum_relabund = sum(rel_abund),
+          sum_mean_cov = sum(mean_cov),
+          domain = domain) %>% 
+  distinct()
+
+unique_to_amm = all_checkm_gtdbtk_abunds_pco %>% 
+  group_by(pco) %>% 
+  filter(all(c("mgshot_S7938Nr1", "mgshot_S7938Nr2") %in% sample) & !"mgshot_S7938Nr3" %in% sample) %>% 
+  ungroup()
+
+unique_to_amm_names = left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")) %>% 
+  unite("pco",phylum,class,
+        sep = ", ", remove = F) %>% 
+  group_by(pco) %>% 
+  filter(all(c("mgshot_S7938Nr1", "mgshot_S7938Nr2") %in% sample) & !"mgshot_S7938Nr3" %in% sample) %>% 
+  ungroup()
+
+unique_to_amm_spl12 = all_checkm_gtdbtk_abunds_pco %>% 
+  group_by(pco) %>% 
+  filter(("mgshot_S7938Nr1" %in% sample & !"mgshot_S7938Nr3" %in% sample) || 
+         ("mgshot_S7938Nr2" %in% sample & !"mgshot_S7938Nr3" %in% sample) ||
+         all(c("mgshot_S7938Nr1", "mgshot_S7938Nr2") %in% sample) & !"mgshot_S7938Nr3" %in% sample) %>%
+  ungroup()
+
+all_checkm_gtdbtk_abunds_pc = left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")) %>% 
+  unite("pc",phylum,class, 
+        sep = " ,", remove = F) %>% 
+  group_by(pc, sample) %>% 
+  reframe(sum_relabund = sum(rel_abund),
+            sum_mean_cov = sum(mean_cov),
+            domain = domain) %>% 
+  distinct()
+
+all_checkm_gtdbtk_abunds_pcf = left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")) %>% 
+  unite("pcf",phylum,class,family, 
+        sep = ", ", remove = F) %>% 
+  group_by(pcf, sample) %>% 
+  reframe(sum_relabund = sum(rel_abund),
+            sum_mean_cov = sum(mean_cov),
+            domain = domain) %>% 
+  distinct()
+
+all_checkm_gtdbtk_abunds_pco %>% 
+  mutate(sample = str_replace(sample, "mgshot_S7938Nr1", "AMM_F"),
+         sample = str_replace(sample, "mgshot_S7938Nr2", "AMM_B"),
+         sample = str_replace(sample, "mgshot_S7938Nr3", "DMM_F")) %>% 
+  ggplot(aes(sample, fct_reorder(pco, sum_relabund), 
+             fill = sum_relabund)) +
+    geom_tile(colour = "white") +
+    facet_grid(domain~., space = "free_y", scales = "free_y") +
+    scale_fill_viridis_c("Relative abundance (%)") +
+    scale_x_discrete(expand = c(0,0)) +
+    theme_bw() +
+    theme(axis.title = element_blank(),
+          strip.background = element_rect(fill = "white"),
+          strip.text.y = element_text(face = "bold", angle = 0),
+          legend.position = "bottom")
+
+plot_a = all_checkm_gtdbtk_abunds_pco %>% 
+  mutate(sample = str_replace(sample, "mgshot_S7938Nr1", "AMM_F"),
+         sample = str_replace(sample, "mgshot_S7938Nr2", "AMM_B"),
+         sample = str_replace(sample, "mgshot_S7938Nr3", "DMM_F")) %>% 
+  ggplot(aes(sample, fct_reorder(pco, sum_relabund), 
+             fill = sum_relabund, 
+             # label = sum_relabund
+             )) +
+    geom_tile(colour = "white") +
+    # geom_text() +
+    facet_grid(domain~., space = "free_y", scales = "free_y") +
+    scale_fill_viridis_c("MAG-level\nrelative abundance (%)", 
+                         trans = "log", 
+                         breaks = c(5, 25, 75),
+                         labels = c(5, 25, 75)) +
+    scale_x_discrete(expand = c(0,0)) +
+    theme_bw() +
+    theme(axis.title = element_blank(),
+          strip.background = element_rect(fill = "white"),
+          strip.text.y = element_text(face = "bold", angle = 0),
+          legend.position = "bottom")
+
+plot_b = unique_to_amm %>% 
+  mutate(sample = str_replace(sample, "mgshot_S7938Nr1", "AMM_F"),
+         sample = str_replace(sample, "mgshot_S7938Nr2", "AMM_B"),
+         sample = str_replace(sample, "mgshot_S7938Nr3", "DMM_F")) %>% 
+  ggplot(aes(sample, fct_reorder(pco, sum_relabund), 
+             fill = sum_relabund, 
+             # label = sum_relabund
+             )) +
+    geom_tile(colour = "white") +
+    # geom_text() +
+    scale_fill_viridis_c("MAG-level\nrelative abundance (%)", 
+                         trans = "log", 
+                         breaks = c(5, 25, 75),
+                         labels = c(5, 25, 75)) +
+    facet_grid(domain~., space = "free_y", scales = "free_y") +
+    scale_x_discrete(expand = c(0,0)) +
+    theme_bw()+
+    theme(axis.title = element_blank(),
+          strip.background = element_rect(fill = "white"),
+          strip.text.y = element_text(face = "bold", angle = 0),
+          legend.position = "bottom")
+```
+
+```{r}
+plot_a + plot_b
+
+ggsave("ADMM_relabunds.png", 
+       height = 10, width = 10)
+```
+
+### DRAM metabolism
+
+```{r}
+archaea_filter = all_checkm_gtdbtk %>% 
+  filter(domain == "Archaea" & Completeness >= 70 & Contamination <= 10)
+
+dram_mg1_sum = read_tsv("mgshot_S7938Nr1_DAS_Tool_uBin_curated_DRAM_out_distill/product.tsv") %>% 
+  gather("metabolism", "values", -genome) %>% 
+  filter(genome %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values >= 0.75)
+
+dram_mg1_sum_tax = dram_mg1_sum %>% 
+  rename(Name = genome) %>% 
+  left_join(all_checkm_gtdbtk, by = "Name") %>% 
+  unite("pcg",phylum,class,order,family,genus,
+        sep = " ,", remove = F) %>% 
+  group_by(pcg, metabolism) %>% 
+  summarise(median_vals = median(values),
+            Name = Name,
+            phylum = phylum) %>% 
+  add_column(sample = "mgshot_S7938Nr1")
+
+dram_mg2_sum = read_tsv("mgshot_S7938Nr2_DAS_Tool_uBin_curated_DRAM_out_distill/product.tsv") %>% 
+  gather("metabolism", "values", -genome) %>% 
+  filter(genome %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values >= 0.75)
+
+dram_mg2_sum_tax = dram_mg2_sum %>% 
+  rename(Name = genome) %>% 
+  left_join(all_checkm_gtdbtk, by = "Name") %>% 
+  unite("pcg",phylum,class,order,family,genus,
+        sep = " ,", remove = F) %>% 
+  group_by(pcg, metabolism) %>% 
+  summarise(median_vals = median(values),
+            Name = Name,
+            phylum = phylum) %>% 
+  add_column(sample = "mgshot_S7938Nr2")
+
+dram_mg1_mg2_sum_tax = bind_rows(dram_mg1_sum_tax, dram_mg2_sum_tax)
+
+dram_mg1_mg2_sum_tax_arc = dram_mg1_mg2_sum_tax %>% 
+         filter(!grepl("CAZy", metabolism) & Name %in% archaea_filter$Name)
+
+ggplot(dram_mg1_mg2_sum_tax_arc,
+       aes(pcg, metabolism, fill = median_vals)) +
+  geom_tile(colour = 'black') +
+  facet_grid(~sample, scales = "free_x", space = "free_x") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+```{r}
+dram_mg1_energy = readxl::read_xlsx("mgshot_S7938Nr1_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 4) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+
+dram_mg2_energy = readxl::read_xlsx("mgshot_S7938Nr2_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 4) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+
+dram_mg3_energy = readxl::read_xlsx("mgshot_S7938Nr3_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 4) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+```
+
+```{r}
+dram_mg1_misc = readxl::read_xlsx("mgshot_S7938Nr1_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 1) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+
+dram_mg2_misc = readxl::read_xlsx("mgshot_S7938Nr2_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 1) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+
+dram_mg3_misc = readxl::read_xlsx("mgshot_S7938Nr3_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 1) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+```
+
+```{r}
+dram_mg1_transp = readxl::read_xlsx("mgshot_S7938Nr1_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 3) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+
+dram_mg2_transp = readxl::read_xlsx("mgshot_S7938Nr2_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 3) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+```
+
+```{r}
+dram_mg1_carbon_wood = readxl::read_xlsx("mgshot_S7938Nr1_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 6) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+
+dram_mg2_carbon_wood = readxl::read_xlsx("mgshot_S7938Nr2_DAS_Tool_uBin_curated_DRAM_out_distill/metabolism_summary.xlsx", 
+                             sheet = 6) %>% 
+  gather("Name", "values", -gene_id, -gene_description, -module, -header, -subheader) %>% 
+  mutate(values = as.double(as.character(values))) %>%
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3) & values > 0) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = "Name")
+```
+
+Putative methanotrophic taxa
+
+```{r}
+dram_mg1_mg2_sum_tax_methanotroph = dram_mg1_mg2_sum_tax %>% 
+         filter(grepl("methanotroph", metabolism, ignore.case = T))
+
+dram_mg1_energy %>% 
+  filter()
+```
+
+
+```{r}
+# dram_mg1_misc %>% 
+#   filter(header == "CRISPR") %>% 
+#   # rename(Name = mags) %>% 
+#   left_join(all_checkm_gtdbtk %>% 
+#               filter(sample == "mgshot_S7938Nr1"), by = "Name") %>% 
+#   mutate(subheader = case_when(is.na(subheader) ~ gene_description,
+#                                TRUE ~ subheader)) %>% 
+#   group_by(Name, phylum, family, subheader) %>% 
+#   summarise(sum_vals = sum(values)) %>% 
+#   ggplot(aes(Name, family, fill = sum_vals)) +
+#     geom_tile(colour = "white") +
+#     facet_grid(phylum ~ subheader, scales = "free", space = "free") +
+#     theme_bw() +
+#     theme(strip.text.y = element_text(angle = 0))
+# 
+# dram_mg3_crispr_hqmags = dram_mg3_misc %>%
+#   filter(header == "CRISPR" & Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3))
+# 
+# mg3_all_checkm_gtdbtk = all_checkm_gtdbtk %>% 
+#               filter(sample == "mgshot_S7938Nr3")
+# 
+# inner_join(mg3_all_checkm_gtdbtk,
+#             dram_mg3_crispr_hqmags) %>% 
+#   mutate(subheader = case_when(is.na(subheader) ~ gene_description,
+#                                TRUE ~ subheader)) %>% 
+#   group_by(Name, phylum, family, subheader) %>% 
+#   summarise(sum_vals = sum(values)) %>% 
+#   
+# ggplot(aes(Name, subheader, fill = sum_vals)) +
+#     geom_tile(colour = "white") +
+#     facet_grid(. ~ phylum, scales = "free") +
+#     scale_fill_viridis_c() +
+#     theme_bw() +
+#     theme(axis.text.x = element_blank(),
+#           axis.ticks.x = element_blank())
+```
+
+```{r}
+mm_comm_energy_mg1_mg2 = bind_rows(dram_mg1_energy, dram_mg2_energy) %>% 
+  filter(Name %in% unique_to_amm_names$Name) %>% 
+  add_column(type = "energy") %>% 
+  group_by(module) %>% 
+  mutate(number_genes_per_module = n_distinct(gene_description)) %>% 
+  group_by(module, Name) %>% 
+  mutate(count = n_distinct(gene_description),
+         completeness = count/number_genes_per_module)
+mm_comm_transp_mg1_mg2 = bind_rows(dram_mg1_transp, dram_mg2_transp) %>% 
+  filter(Name %in% unique_to_amm_names$Name) %>% 
+  add_column(type = "transporters")
+mm_comm_misc_mg1_mg2 = bind_rows(dram_mg1_misc, dram_mg2_misc) %>% 
+  filter(Name %in% unique_to_amm_names$Name) %>% 
+  add_column(type = "misc")
+mm_comm_carbon_wood_mg1_mg2 = bind_rows(dram_mg1_carbon_wood, dram_mg2_carbon_wood) %>% 
+  filter(Name %in% unique_to_amm_names$Name) %>% 
+  add_column(type = "carbon_wood")
+
+mm_comm_spec_metabolism = bind_rows(mm_comm_energy_mg1_mg2, mm_comm_transp_mg1_mg2,
+                                    mm_comm_misc_mg1_mg2, mm_comm_carbon_wood_mg1_mg2) %>% 
+  filter(Name %in% unique_to_amm_names$Name & 
+           !grepl("Ribosome", module, ignore.case= T) & 
+           !grepl("polymerase", module, ignore.case = T)) %>% 
+  group_by(Name, gene_description) %>% 
+  reframe(hits = sum(values),
+          header = header,
+          module = module,
+          phylum = phylum,
+          class = class,
+          order = order,
+          genus = genus)
+
+mm_comm_spec_metabolism_energy = bind_rows(mm_comm_energy_mg1_mg2, mm_comm_transp_mg1_mg2,
+                                    mm_comm_misc_mg1_mg2, mm_comm_carbon_wood_mg1_mg2) %>% 
+  filter(Name %in% unique_to_amm_names$Name & 
+           !grepl("Ribosome", module, ignore.case= T) & 
+           !grepl("polymerase", module, ignore.case = T)) %>% 
+  filter(type == "energy") %>% 
+  group_by(Name, gene_description, module, sample, phylum) %>% 
+  reframe(hits = sum(values),
+          header = header,
+          module = module,
+          phylum = phylum,
+          class = class,
+          order = order,
+          genus = genus,
+          completeness = completeness)
+
+carbon_pathways = c("Reductive citrate cycle (Arnon-Buchanan cycle)", 
+"Dicarboxylate-hydroxybutyrate cycle", "Hydroxypropionate-hydroxybutylate cycle", "Methanogenesis, acetate => methane", "Malonate semialdehyde pathway, propanoyl-CoA => acetyl-CoA", "Acetyl-CoA pathway", "Methanogenesis, CO2 => methane",  "Reductive pentose phosphate cycle (Calvin cycle)", "Reductive pentose phosphate cycle, glyceraldehyde-3P => ribulose-5P", "Reductive pentose phosphate cycle, ribulose-5P => glyceraldehyde-3P", "Reductive acetyl-CoA pathway (Wood-Ljungdahl pathway)", "Dissimilatory nitrate reduction, nitrate => ammonia", "Succinate dehydrogenase, prokaryotes", "Methanogenesis, methanol => methane", "Methanogenesis, methylamine/dimethylamine/trimethylamine => methane", "Assimilatory sulfate reduction, sulfate => H2S", "Dissimilatory sulfate reduction, sulfate => H2S", "3-Hydroxypropionate bi-cycle", "Complete nitrification, comammox, ammonia => nitrite => nitrate", "Nitrification, ammonia => nitrite", "Arsenate", "Methane oxidation, methanotroph, methane => formaldehyde", "nitrite + ammonia => nitrogen", "Denitrification, nitrate => nitrogen", "hydrogenase", "Assimilatory nitrate reduction, nitrate => ammonia")
+
+
+ggplot(dram_mg1_mg2_sum_tax %>% 
+         filter(
+           # module %in% carbon_pathways
+           median_vals > .5),
+       aes(Name, metabolism, fill = median_vals)) +
+  geom_tile(colour = 'black') +
+  facet_grid(metabolism~phylum, scales = "free", space = "free") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+          strip.background = element_rect(fill = "white"),
+          strip.text.y = element_text(face = "bold", angle = 0))
+
+ggsave("AMM_Cmet.png", 
+       height = 14, width = 33)
+```
+
+
+```{r}
+ggplot(mm_comm_spec_metabolism_energy %>% 
+         filter(phylum == "Thermoproteota" & grepl("nitr", module)),
+       aes(Name, gene_description, fill = completeness)) +
+  geom_tile(colour = 'black') +
+  facet_grid(module~class+order, scales = "free", space = "free") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+          strip.background = element_rect(fill = "white"),
+          strip.text.y = element_text(face = "bold", angle = 0))
+
+ggsave("AMM_Cmet.png", 
+       height = 14, width = 33)
+```
+
+```{r}
+mm_comm_metabolism_mg1_mg2_sum_tax = bind_rows(dram_mg1_sum_tax, dram_mg2_sum_tax) %>% 
+  filter(Name %in% unique_to_amm_names$Name)
+
+ggplot(mm_comm_metabolism_mg1_mg2_sum_tax,
+       aes(Name, metabolism, fill = median_vals)) +
+  geom_tile(colour = 'black') +
+  facet_grid(.~phylum, scales = "free", space = "free") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+
+mm_comm_spec_metabolism %>% 
+  filter(header == "CRISPR") %>% 
+  ggplot(aes(Name, gene_description, fill = hits)) +
+  geom_tile(colour = 'black') +
+  facet_grid(.~phylum, scales = "free", space = "free") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+  # theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+### Antismash outputs
+
+```{r}
+mg1_antismash = read_tsv("mgshot_S7938Nr1_antismash_summary_outputs.tsv") %>% 
+  rename(Name = `...1`) %>%
+  mutate(Name = str_remove(Name, "_output")) %>% 
+  # filter(Name %in% unique_to_amm$Name) %>%
+  filter(Name %in% hq_mags_mg1) %>% 
+  gather("metabolite", "hits", -Name) %>% 
+  filter(hits > 0) %>% 
+  add_column(sample = "mgshot_S7938Nr1") %>% 
+  left_join(left_join(all_checkm_gtdbtk, 
+                      mag_abunds, by = c("Name", "sample")), 
+            by = c("Name", "sample"))
+
+mg2_antismash = read_tsv("mgshot_S7938Nr2_antismash_summary_outputs.tsv") %>% 
+  rename(Name = `...1`) %>%
+  mutate(Name = str_remove(Name, "_output")) %>% 
+  # filter(Name %in% unique_to_amm$Name) %>%
+  filter(Name %in% hq_mags_mg2) %>% 
+  gather("metabolite", "hits", -Name) %>% 
+  filter(hits > 0) %>% 
+  add_column(sample = "mgshot_S7938Nr2") %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), 
+            by = c("Name", "sample"))
+
+mg1_mg2_antismash = bind_rows(mg1_antismash, mg2_antismash)
+
+ggplot(mg1_mg2_antismash,
+       aes(Name, metabolite, fill = hits)) +
+  geom_tile(colour = 'white') +
+  facet_grid(.~phylum, scales = "free", space = "free") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+
+mg3_antismash = read_tsv("mgshot_S7938Nr3_antismash_summary_outputs.tsv") %>%
+  rename(Name = `...1`) %>%
+  mutate(Name = str_remove(Name, "_output")) %>% 
+  filter(Name %in% hq_mags_mg3) %>% 
+  gather("metabolite", "hits", -Name) %>% 
+  filter(hits > 0) %>% 
+  add_column(sample = "mgshot_S7938Nr3") %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), 
+            by = c("Name", "sample"))
+
+ggplot(mg3_antismash,
+       aes(Name, metabolite, fill = hits)) +
+  geom_tile(colour = 'black') +
+  facet_grid(.~phylum, scales = "free", space = "free") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+
+all_antismash = bind_rows(mg1_antismash, mg2_antismash, mg3_antismash) %>% 
+  group_by(Name) %>% 
+  mutate(mag_hit_count = n(),
+         norm_hits = hits/mag_hit_count)
+
+ggplot(all_antismash,
+       aes(Name, metabolite, fill = hits)) +
+  geom_tile(colour = 'white') +
+  facet_grid(sample~phylum, 
+             scales = "free_x", space = "free_y") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_blank())
+
+ggplot(all_antismash,
+       aes(norm_hits, fill = sample)) +
+  geom_density(alpha = 0.5) +
+  facet_grid(.~sample) +
+  theme_bw()
+```
+
+```{r}
+all_antismash = bind_rows(mg1_mg2_antismash, mg3_antismash) %>% 
+  filter(Name %in% c(hq_mags_mg1, hq_mags_mg2, hq_mags_mg3)) %>% 
+  mutate(pco = paste0(phylum, ", ", class, ", ", order))
+
+tol18rainbow=c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC", "#777711", "#AAAA44", "#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#DD7788")
+
+
+# antiSMASH per tax (heatmap)
+
+ggplot(all_antismash %>% 
+  mutate(pco = paste0(phylum, ", ", class, ", ", order)) %>% 
+  group_by(pco, metabolite, sample) %>% 
+  summarise(summed_hits = sum(hits)),
+       aes(sample, reorder(pco, summed_hits), 
+           fill = summed_hits)) +
+  geom_tile(colour = "white") +
+  # geom_jitter(height = .1, alpha = .7) +
+  facet_grid(.~metabolite, scales = "free", space = "free") +
+  scale_fill_viridis_c() +
+  # scale_color_manual(values = tol18rainbow) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+
+# antiSMASH per tax (points)
+
+ggplot(all_antismash %>% 
+  mutate(pco = paste0(phylum, ", ", class, ", ", order)) %>% 
+  group_by(pco, metabolite, sample) %>% 
+  summarise(summed_hits = sum(hits)) %>% 
+  filter(summed_hits > 1),
+       aes(summed_hits, reorder(metabolite, summed_hits),
+           fill = reorder(pco, summed_hits), 
+           colour = reorder(pco, summed_hits))) +
+  # geom_tile(colour = "white") +
+  geom_jitter(height = .1, alpha = .7) +
+  facet_grid(.~sample, scales = "free_y", space = "free_y") +
+  # scale_fill_viridis_c() +
+  # scale_color_manual(values = tol18rainbow) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1), legend.position = "none")
+
+# antiSMASH per sample
+
+ggplot(all_antismash %>% 
+  mutate(pco = paste0(phylum, ", ", class, ", ", order)) %>% 
+  group_by(pco, metabolite, sample) %>% 
+  summarise(summed_hits = sum(hits)) %>% 
+    mutate(sample = str_replace(sample, "mgshot_S7938Nr1", "mgshot_S7938Nr1 (AMM_F)"),
+         sample = str_replace(sample, "mgshot_S7938Nr2", "mgshot_S7938Nr2 (AMM_B)"),
+         sample = str_replace(sample, "mgshot_S7938Nr3", "mgshot_S7938Nr3 (DMM_F)")),
+       aes(summed_hits, reorder(metabolite, summed_hits))) +
+  # geom_tile(colour = "white") +
+  geom_jitter(height = .1, alpha = .7, colour = "grey30") +
+  facet_grid(.~sample, scales = "free_y", space = "free_y") +
+  labs(x = "Metabolite presence counts") +
+  # scale_fill_viridis_c() +
+  # scale_color_manual(values = tol18rainbow) +
+  theme_bw() +
+  theme(axis.title.y = element_blank(),
+        strip.text.x = element_text(face = "bold"),
+        strip.background = element_rect(fill = "white"),
+        legend.position = "none")
+
+ggsave("antismash_per_sample.png", width = 8, height = 6)
+```
+
+### defense-finder
+
+```{r}
+mg1_df_stats_files = list.files("defensefinder/mgshot_S7938Nr1", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_hmmer.tsv")
+
+mg1_df_stats = read_tsv(mg1_df_stats_files, id = "file_name") %>% 
+  filter(i_eval >= 1e-5)
+
+mg1_df_files = list.files("defensefinder/mgshot_S7938Nr1", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_systems.tsv")
+
+mg1_df = read_tsv(mg1_df_files, id = "file_name") %>% 
+  mutate(clean_name = str_remove(file_name, "defensefinder/mgshot_S7938Nr1/")) %>% 
+  mutate(clean_name = str_remove(clean_name, "_out/defense_finder_systems.tsv")) %>% 
+  add_column(sample = "mgshot_S7938Nr1") %>% 
+  filter(!protein_in_syst %in% mg1_df_stats$hit_id) %>% 
+  select(type, subtype, genes_count, clean_name, sample)
+
+mg2_df_stats_files = list.files("defensefinder/mgshot_S7938Nr2", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_hmmer.tsv")
+
+mg2_df_stats = read_tsv(mg2_df_stats_files, id = "file_name") %>% 
+  filter(i_eval >= 1e-5)
+
+mg2_df_files = list.files("defensefinder/mgshot_S7938Nr2", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_systems.tsv")
+
+mg2_df = read_tsv(mg2_df_files, id = "file_name") %>% 
+  mutate(clean_name = str_remove(file_name, "defensefinder/mgshot_S7938Nr2/")) %>% 
+  mutate(clean_name = str_remove(clean_name, "_out/defense_finder_systems.tsv")) %>% 
+  add_column(sample = "mgshot_S7938Nr2") %>% 
+  filter(!protein_in_syst %in% mg2_df_stats$hit_id) %>% 
+  select(type, subtype, genes_count, clean_name, sample)
+
+mg3_df_stats_files = list.files("defensefinder/mgshot_S7938Nr3", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_hmmer.tsv")
+
+mg3_df_stats = read_tsv(mg3_df_stats_files, id = "file_name") %>% 
+  filter(i_eval >= 1e-5)
+
+mg3_df_files = list.files("defensefinder/mgshot_S7938Nr3", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_systems.tsv")
+
+mg3_df = read_tsv(mg3_df_files, id = "file_name") %>% 
+  mutate(clean_name = str_remove(file_name, "defensefinder/mgshot_S7938Nr3/")) %>% 
+  mutate(clean_name = str_remove(clean_name, "_out/defense_finder_systems.tsv")) %>% 
+  add_column(sample = "mgshot_S7938Nr3") %>% 
+  filter(!protein_in_syst %in% mg3_df_stats$hit_id) %>% 
+  select(type, subtype, genes_count, clean_name, sample)
+
+all_df = bind_rows(mg1_df, mg2_df, mg3_df) %>% 
+  rename(Name = clean_name) %>% 
+  left_join(left_join(all_checkm_gtdbtk, mag_abunds, by = c("Name", "sample")), by = c("Name", "sample"))
+```
+
+```{r}
+ggplot(all_df %>% 
+         mutate(po = paste0(phylum, ", ", order)) %>% 
+         group_by(subtype, po, sample) %>% 
+         summarise(count = sum(genes_count),
+                   Name = Name,
+                   phylum = phylum,
+                   order = order) %>% 
+         group_by(Name, sample) %>% 
+         mutate(n = n(),
+                norm_count = round(count/n, 1)) %>% 
+         group_by(po, subtype, sample) %>% 
+         summarise(mean_norm_count = round(mean(norm_count), 1),
+                   subtype = subtype) %>% 
+         filter(mean_norm_count >= 2), 
+       aes(po, subtype, fill = mean_norm_count, label = mean_norm_count)) +
+  geom_tile(colour = 'black') +
+  geom_text(aes(colour = ifelse(mean_norm_count > 30, "black", "white"))) +
+  facet_grid(sample~., 
+             scales = "free", space = "free") +
+  scale_fill_viridis_c() +
+  scale_colour_identity() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+```
+
+```{r}
+ggplot(all_df %>% 
+         mutate(po = paste0(phylum, ", ", order)) %>% 
+         group_by(subtype, po, sample) %>% 
+         summarise(count = sum(genes_count),
+                   Name = Name,
+                   phylum = phylum,
+                   order = order), 
+       aes(po, count, colour = subtype)) +
+  geom_point() +
+  # geom_tile(colour = 'black') +
+  # geom_text(aes(colour = ifelse(count > 3, "black", "white"))) +
+  facet_grid(.~sample,
+             scales = "free", space = "free") +
+  # scale_fill_viridis_c() +
+  # scale_colour_identity() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+```

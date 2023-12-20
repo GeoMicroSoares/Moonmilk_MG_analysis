@@ -1,0 +1,588 @@
+---
+title: "Moonmilk_SeqCode_Manuscript_080923_ARS"
+author: "André Rodrigues Soares"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(ggrepel)
+library(kableExtra)
+library(tidytree)
+library(ggtree)
+```
+
+```{r}
+# bac_phyla_of_interest = c("KSB1")
+bac_families_of_interest = c("UBA1568")
+bac_classes_of_interest = c("MSB-5A5")
+```
+
+Only MAGs >= 70% completeness & <= 10% contamination were kept.
+
+```{r message=FALSE, warning=FALSE}
+hq_mags_mg1 = read_tsv("mgshot_S7938Nr1_DAS_Tool_uBin_curated_checkm2_gt70lt10_IDs", 
+                   col_names = "ID")$ID
+hq_mags_mg2 = read_tsv("mgshot_S7938Nr2_DAS_Tool_uBin_curated_checkm2_gt70lt10_IDs", 
+                   col_names = "ID")$ID
+```
+
+### Summary stats and taxonomy of MAGs of interest:
+
+```{r message=FALSE, warning=FALSE}
+checkm2_mg1 = read_tsv("mgshot_S7938Nr1_quality_report.tsv") %>% 
+  filter(Name %in% hq_mags_mg1) %>% 
+  select(Name, Completeness, Contamination, Genome_Size, GC_Content) %>% 
+  add_column(sample = "mgshot_S7938Nr1") %>% 
+  filter(Completeness >= 70 & Contamination <= 10)
+
+checkm2_mg2 = read_tsv("mgshot_S7938Nr2_quality_report.tsv") %>% 
+  filter(Name %in% hq_mags_mg2) %>% 
+  select(Name, Completeness, Contamination, Genome_Size, GC_Content) %>% 
+  add_column(sample = "mgshot_S7938Nr2")
+
+checkm2_all = bind_rows(checkm2_mg1, checkm2_mg2) %>% 
+  filter(Completeness >= 70 & Contamination <= 10)
+```
+
+```{r message=FALSE, warning=FALSE}
+gtdbtk_mg1_bac = read_tsv("mgshot_S7938Nr1_gtdbtk.bac120.summary.tsv") %>% 
+  filter(user_genome %in% hq_mags_mg1) %>% 
+  select(user_genome, classification) %>% 
+  add_column(sample = "mgshot_S7938Nr1")
+gtdbtk_mg1_arc = read_tsv("mgshot_S7938Nr1_gtdbtk.ar53.summary.tsv") %>% 
+  filter(user_genome %in% hq_mags_mg1) %>% 
+  select(user_genome, classification) %>% 
+  add_column(sample = "mgshot_S7938Nr1")
+
+gtdbtk_mg2_bac = read_tsv("mgshot_S7938Nr2_gtdbtk.bac120.summary.tsv") %>% 
+  filter(user_genome %in% hq_mags_mg2) %>% 
+  select(user_genome, classification) %>% 
+  add_column(sample = "mgshot_S7938Nr2")
+gtdbtk_mg2_arc = read_tsv("mgshot_S7938Nr2_gtdbtk.ar53.summary.tsv") %>% 
+  filter(user_genome %in% hq_mags_mg2) %>% 
+  select(user_genome, classification) %>% 
+  add_column(sample = "mgshot_S7938Nr2")
+
+gtdbtk_all = bind_rows(gtdbtk_mg1_bac, gtdbtk_mg1_arc,
+                       gtdbtk_mg2_bac, gtdbtk_mg2_arc) %>% 
+  rename(Name = user_genome) %>% 
+  mutate(classification = str_remove_all(classification,
+                                     paste(c("d__","p__","c__",
+                                             "o__","f__","g__"), 
+                                           collapse = "|"))) %>% 
+  separate(classification, into = c("domain", "phylum", "class",
+                                    "order", "family", "genus"), sep = ";") %>% 
+  filter(family %in% bac_families_of_interest | class %in% bac_classes_of_interest)
+```
+
+```{r}
+abund_list = list.files(".", pattern = "_abunds.txt")
+mag_abunds = read_tsv(abund_list, id = "sample", 
+                      col_names = c("Name","rel_abund","mean_cov"), skip = 1) %>% 
+  # filter(Name %in% mags_of_interest) %>% 
+  mutate(sample = str_remove(sample, "_coverm_mag_abunds.txt"),
+         rel_abund = rel_abund)
+
+all_checkm_gtdbtk_abunds = left_join(gtdbtk_all, checkm2_all,
+                              by = c("Name", "sample")) %>% 
+                    left_join(mag_abunds,
+                              by = c("Name", "sample"))
+
+mags_of_interest = all_checkm_gtdbtk_abunds$Name
+
+```
+
+```{r}
+all_checkm_gtdbtk_abunds %>% 
+  filter(family == "UBA1568") %>% 
+  select(-domain) %>% 
+  arrange(phylum, desc(Completeness), Contamination) %>% 
+  kableExtra::kbl() %>% 
+  kableExtra::kable_classic(full_width = F)
+
+all_checkm_gtdbtk_abunds %>% 
+  filter(order == "GN15") %>% 
+  select(-domain) %>% 
+  arrange(phylum, desc(Completeness), Contamination) %>% 
+  kableExtra::kbl() %>% 
+  kableExtra::kable_classic(full_width = F)
+```
+
+### Metabolisms as per DRAM
+
+```{r}
+dram_mg1_sum = read_tsv("mgshot_S7938Nr1_DAS_Tool_uBin_curated_DRAM_out_distill/product.tsv") %>% 
+  gather("metabolism", "values", -genome) %>% 
+  filter(genome %in% mags_of_interest & values > 0.5) %>% 
+  add_column(sample = "mgshot_S7938Nr1")
+
+dram_mg2_sum = read_tsv("mgshot_S7938Nr2_DAS_Tool_uBin_curated_DRAM_out_distill/product.tsv") %>% 
+  gather("metabolism", "values", -genome) %>% 
+  filter(genome %in% mags_of_interest & values > 0.5) %>% 
+  add_column(sample = "mgshot_S7938Nr2")
+
+dram_mg1_mg2_sum = bind_rows(dram_mg1_sum, dram_mg2_sum) %>% 
+  rename(Name = genome)
+
+dram_mg1_mg2_sum_all_data = left_join(dram_mg1_mg2_sum,
+                                     all_checkm_gtdbtk_abunds,
+                                     by = c("Name", "sample"))
+
+ggplot(dram_mg1_mg2_sum_all_data,
+       aes(Name, metabolism, fill = values)) +
+  geom_tile(colour = 'black') +
+  facet_grid(.~class+order, 
+             scales = "free_x", space = "free_x") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+### defense-finder
+
+```{r}
+mg1_df_stats_files = list.files("defensefinder/mgshot_S7938Nr1", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_hmmer.tsv")
+
+mg1_df_stats = read_tsv(mg1_df_stats_files, id = "file_name") %>% 
+  filter(i_eval >= 1e-5)
+
+mg1_df_files = list.files("defensefinder/mgshot_S7938Nr1", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_systems.tsv")
+
+mg1_df = read_tsv(mg1_df_files, id = "file_name") %>% 
+  mutate(clean_name = str_remove(file_name, "defensefinder/mgshot_S7938Nr1/")) %>% 
+  mutate(clean_name = str_remove(clean_name, "_out/defense_finder_systems.tsv")) %>% 
+  add_column(sample = "mgshot_S7938Nr1") %>% 
+  filter(!protein_in_syst %in% mg1_df_stats$hit_id) %>% 
+  select(type, subtype, genes_count, clean_name, sample)
+
+mg2_df_stats_files = list.files("defensefinder/mgshot_S7938Nr2", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_hmmer.tsv")
+
+mg2_df_stats = read_tsv(mg2_df_stats_files, id = "file_name") %>% 
+  filter(i_eval >= 1e-5)
+
+mg2_df_files = list.files("defensefinder/mgshot_S7938Nr2", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_systems.tsv")
+
+mg2_df = read_tsv(mg2_df_files, id = "file_name") %>% 
+  mutate(clean_name = str_remove(file_name, "defensefinder/mgshot_S7938Nr2/")) %>% 
+  mutate(clean_name = str_remove(clean_name, "_out/defense_finder_systems.tsv")) %>% 
+  add_column(sample = "mgshot_S7938Nr2") %>% 
+  filter(!protein_in_syst %in% mg2_df_stats$hit_id) %>% 
+  select(type, subtype, genes_count, clean_name, sample)
+
+mg3_df_stats_files = list.files("defensefinder/mgshot_S7938Nr3", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_hmmer.tsv")
+
+mg3_df_stats = read_tsv(mg3_df_stats_files, id = "file_name") %>% 
+  filter(i_eval >= 1e-5)
+
+mg3_df_files = list.files("defensefinder/mgshot_S7938Nr3", 
+                          recursive = T, full.names = T,
+                          pattern = "defense_finder_systems.tsv")
+
+mg3_df = read_tsv(mg3_df_files, id = "file_name") %>% 
+  mutate(clean_name = str_remove(file_name, "defensefinder/mgshot_S7938Nr3/")) %>% 
+  mutate(clean_name = str_remove(clean_name, "_out/defense_finder_systems.tsv")) %>% 
+  add_column(sample = "mgshot_S7938Nr3") %>% 
+  filter(!protein_in_syst %in% mg3_df_stats$hit_id) %>% 
+  select(type, subtype, genes_count, clean_name, sample)
+
+all_df = bind_rows(mg1_df, mg2_df, mg3_df) %>% 
+  rename(Name = clean_name) %>% 
+  left_join(left_join(all_checkm_gtdbtk_abunds, mag_abunds, by = c("Name", "sample")), by = c("Name", "sample")) %>% 
+  filter(Name %in% mags_of_interest)
+```
+
+```{r}
+ggplot(all_df %>% 
+         mutate(po = paste0(phylum, ", ", order)) %>% 
+         group_by(subtype, po, sample) %>% 
+         summarise(count = sum(genes_count),
+                   Name = Name),
+       aes(subtype, Name, fill = count, label = count)) +
+  geom_tile(colour = 'black') +
+  geom_text(aes(colour = ifelse(count > 12, "black", "white"))) +
+  facet_grid(po~., 
+             scales = "free_y", space = "free_y") +
+  scale_fill_viridis_c() +
+  scale_colour_identity() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1, vjust = 1),
+        legend.position = "none")
+```
+
+```{r}
+ggplot(all_df %>% 
+         mutate(po = paste0(phylum, ", ", order)) %>% 
+         group_by(subtype, po, sample) %>% 
+         summarise(count = sum(genes_count),
+                   Name = Name,
+                   phylum = phylum,
+                   order = order) %>% 
+         group_by(Name, sample) %>% 
+         mutate(n = n(),
+                norm_count = round(count/n, 1)) %>% 
+         group_by(po, subtype, sample) %>% 
+         summarise(mean_norm_count = round(mean(norm_count), 1),
+                   subtype = subtype) %>% 
+         filter(mean_norm_count >= 1), 
+       aes(po, subtype, fill = mean_norm_count, label = mean_norm_count)) +
+  geom_tile(colour = 'black') +
+  geom_text(aes(colour = ifelse(mean_norm_count > 30, "black", "white"))) +
+  facet_grid(sample~., 
+             scales = "free", space = "free") +
+  scale_fill_viridis_c() +
+  scale_colour_identity() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+        legend.position = "none")
+```
+
+## KSB1, MSB-5A5 DRAM hits
+
+```{r}
+## CHECKM2
+
+uba_checkm2 = read_tsv("UBA1568_checkm2_121223_quality_report.tsv") %>% 
+  select(Name, Completeness, Contamination, Genome_Size, GC_Content) %>% 
+  filter(Completeness >= 70 & Contamination <= 10)
+
+msb_checkm2 = read_tsv("MSB-5A5_checkm2_291123_quality_report.tsv") %>% 
+  select(Name, Completeness, Contamination, Genome_Size, GC_Content) %>% 
+  filter(Completeness >= 70 & Contamination <= 10)
+
+## GTDB
+
+uba_gtdb = read_tsv("UBA1568_gtdbtk.bac120.summary.tsv") %>% 
+  rename(Name = user_genome) %>% 
+  mutate(classification = str_remove_all(classification,
+                                     paste(c("d__","p__","c__",
+                                             "o__","f__","g__"), 
+                                           collapse = "|"))) %>% 
+  separate(classification, into = c("domain", "phylum", "class",
+                                    "order", "family", "genus"), sep = ";") %>% 
+  select(Name, domain, phylum, class, order, family, genus)
+
+msb_gtdb = read_tsv("MSB-5A5_gtdbtk.bac120.summary.tsv") %>% 
+  rename(Name = user_genome) %>% 
+  mutate(classification = str_remove_all(classification,
+                                     paste(c("d__","p__","c__",
+                                             "o__","f__","g__"), 
+                                           collapse = "|"))) %>% 
+  separate(classification, into = c("domain", "phylum", "class",
+                                    "order", "family", "genus"), sep = ";") %>% 
+  select(Name, domain, phylum, class, order, family, genus)
+
+## DRAM
+
+msb_energy = read_tsv("MSB-5A5_DRAM_291123_distill/product.tsv") %>% 
+  gather("metabolism", "completeness", -genome)  %>% 
+  mutate(completeness = as.double(as.character(completeness))) %>%
+  rename(Name = genome)
+
+msb_energy_all_data = left_join(msb_energy,
+                                     msb_checkm2,
+                                     by = "Name") %>% 
+  left_join(msb_gtdb, by = "Name") %>% 
+  group_by(metabolism, genus) %>% 
+  mutate(median_completeness = median(completeness))
+
+uba_energy = read_tsv("UBA1568_DRAM_distill_111223/product.tsv") %>% 
+  gather("metabolism", "completeness", -genome)  %>% 
+  mutate(completeness = as.double(as.character(completeness))) %>%
+  rename(Name = genome)
+
+uba_energy_all_data = left_join(uba_energy,
+                                     uba_checkm2,
+                                     by = "Name") %>% 
+  left_join(uba_gtdb, by = "Name") %>% 
+  group_by(metabolism, genus) %>% 
+  mutate(median_completeness = median(completeness))
+```
+
+chekm data for uba & GN15 MAGs of interest
+
+```{r}
+uba_energy_summary_checkm = uba_energy_all_data %>% 
+    ungroup() %>% 
+    # filter(!grepl("mgshot", Name)) %>% 
+    select(Completeness, Contamination, class, order, family) %>% 
+  ggplot(aes(Contamination, Completeness)) + 
+    facet_grid(.~order+family) + 
+    geom_hline(yintercept = 80, 
+               linetype = "dashed", alpha = .3) +
+    geom_vline(xintercept = 5, 
+               linetype = "dashed", alpha = .3) +
+    geom_point(colour = "gray40",
+               size = 3, alpha = 0.5) +
+    geom_point(colour = "black",
+               shape = 1,
+               size = 3, alpha = 0.5) +
+    geom_point(data = uba_energy_all_data %>% 
+                        ungroup() %>% 
+                        filter(grepl("mgshot", Name)) %>% 
+                        select(Completeness, Contamination, class, order, family),
+               mapping = aes(Contamination, Completeness),
+               colour = "firebrick3",
+               size = 3, alpha = 0.5) +
+    scale_x_continuous(expand = c(.01,0), trans = "sqrt") +
+    theme_bw()
+
+uba_energy_summary_checkm
+ggsave("uba_checkm.png",
+       height = 2, width = 20)
+
+msb_energy_summary_checkm = msb_energy_all_data %>% 
+    ungroup() %>% 
+    filter(!grepl("mgshot", Name) &
+                  order == "GN15") %>% 
+    select(Completeness, Contamination, order, family) %>% 
+  ggplot(aes(Contamination, Completeness)) + 
+    facet_grid(.~order+family) + 
+    geom_hline(yintercept = 80, 
+               linetype = "dashed", alpha = .3) +
+    geom_vline(xintercept = 5, 
+               linetype = "dashed", alpha = .3) +
+    geom_point(colour = "gray40",
+               size = 3, alpha = 0.5) +
+    geom_point(colour = "black",
+               shape = 1,
+               size = 3, alpha = 0.5) +
+    geom_point(data = msb_energy_all_data %>% 
+                        ungroup() %>% 
+                        filter(grepl("mgshot", Name)) %>% 
+                        select(Completeness, Contamination, order, family),
+               mapping = aes(Contamination, Completeness),
+               colour = "firebrick3",
+               size = 3, alpha = 0.5) +
+    scale_x_continuous(expand = c(0.01,0), trans = "sqrt",
+                       breaks = c(0, 1, 2, 3, 4, 5, 6, 7.5),
+                       labels = c(0, 1, 2, 3, 4, 5, 6, 7.5)) +
+    theme_bw()
+
+msb_energy_summary_checkm
+ggsave("MSB_checkm.png",
+       height = 2, width = 20)
+
+design = "A#
+          BB"
+
+uba_energy_summary_checkm + msb_energy_summary_checkm +
+  plot_layout(nrow = 2, design = design)
+
+ggsave("MSB_UBA1568_checkm_order.png",
+       height = 4, width = 9, dpi = 300)
+```
+
+## DRAM C metabolism for uba
+
+```{r}
+carbon_pathways = rev(c("Reductive citrate cycle (Arnon-Buchanan cycle)", "Dicarboxylate-hydroxybutyrate cycle", "Hydroxypropionate-hydroxybutylate cycle", 
+                    "Methanogenesis, acetate => methane", "Malonate semialdehyde pathway, propanoyl-CoA => acetyl-CoA", "Acetyl-CoA pathway", 
+                    "Methanogenesis, CO2 => methane",  "Reductive pentose phosphate cycle (Calvin cycle)", 
+                    "Reductive pentose phosphate cycle, glyceraldehyde-3P => ribulose-5P", 
+                    "Reductive pentose phosphate cycle, ribulose-5P => glyceraldehyde-3P",
+                    "Reductive acetyl-CoA pathway (Wood-Ljungdahl pathway)", "Dissimilatory nitrate reduction, nitrate => ammonia", 
+                    "Succinate dehydrogenase, prokaryotes", "Methanogenesis, methanol => methane", 
+                    "Methanogenesis, methylamine/dimethylamine/trimethylamine => methane", "Assimilatory sulfate reduction, sulfate => H2S",
+                    "Dissimilatory sulfate reduction, sulfate => H2S", "3-Hydroxypropionate bi-cycle", 
+                    "Complete nitrification, comammox, ammonia => nitrite => nitrate", "Nitrification, ammonia => nitrite",
+                    "Arsenate", "Methane oxidation, methanotroph, methane => formaldehyde", "nitrite + ammonia => nitrogen", 
+                    "Denitrification, nitrate => nitrogen", "hydrogenase", "Assimilatory nitrate reduction, nitrate => ammonia"))
+
+ggplot(uba_energy_all_data %>% 
+         filter(
+           # metabolism %in% carbon_pathways &
+                  median_completeness > 0.5 &
+                  # completeness_na > 0 &
+                  # order == "GN15" &
+                  !grepl("Methanogenesis", metabolism)),
+       aes(genus, fct_relevel(metabolism, carbon_pathways), fill = median_completeness)) +
+  geom_tile(colour = 'black') +
+  facet_grid(.~order+family,
+             scales = "free", 
+             space = "free") +
+  scale_fill_viridis_c() +
+  guides(fill = guide_colorbar(title = "Median genus-level\npathway completeness (%)")) +
+  labs(x = "Genus", y = "Metabolic pathways") +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+          strip.background = element_rect(fill = "white"),
+          strip.text.x = element_text(face = "bold", angle = 0))
+### highlight that this is median completeness!
+
+ggsave("UBA1568_Cmet.png", 
+       height = 3, width = 10)
+```
+
+## DRAM C metabolism for uba w/ phylogeny
+
+
+```{r}
+uba_tree = read.tree("UBA1568_gtdbtk_tree/UBA1568.subset.gtdbtk.bac120.classify.tree")
+# uba_tree$root.edge <- .2
+
+uba_q = ggtree(uba_tree, layout = "rectangular",
+               root.position = 1) +
+  # geom_tippoint(size = 2, aes(x=x+0.1)) +
+  # geom_tiplab() +
+  # geom_text(aes(label=node)) +
+  geom_point2(aes(subset= node %in% c(13, 16, 21, 39)), 
+              colour = "red", size = 3) +
+  geom_point2(aes(subset= node %in% c(13, 16, 21, 39)), 
+              colour = "black", size = 3, shape = 1) +
+  geom_tiplab(aes(label = ""), align=TRUE, linesize=.5, linetype = "dotted") +
+  geom_treescale(fontsize=6, linesize=2, offset=1,
+                 x = 2.5, y = -45) +
+  scale_y_reverse(expand = c(0,0.5))
+  # theme_tree2()
+
+uba_mag_order = get_taxa_name(uba_q) %>% 
+  str_remove("MM_")
+
+uba_c = ggplot(uba_energy_all_data %>% 
+                 ungroup() %>% 
+         filter(
+           # metabolism %in% carbon_pathways &
+                  median_completeness > 0.5 &
+                  # completeness_na > 0 &
+                  # order == "GN15" &
+                  !grepl("Methanogenesis", metabolism)),
+       aes(fct_relevel(metabolism, carbon_pathways), 
+           fct_relevel(Name, uba_mag_order),
+           fill = completeness*100)) +
+  geom_tile(colour = 'black') +
+  facet_grid(fct_relevel(genus, rev(c("UBA1568", "JAGOSP01", "SSEF01", "JAAXTX01", "JAGOTT01", "GCA-016699975"))) ~ .,
+             scales = "free", 
+             space = "free") +
+  scale_fill_viridis_c() +
+  guides(fill = guide_colorbar(title = "Pathway completeness (%)")) +
+  labs(x = "Genus", y = "Metabolic pathways") +
+  scale_x_discrete(expand = c(0,0), position = "top") +
+  scale_y_discrete(expand = c(0,0)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 0, vjust = 0),
+        axis.title.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank(),
+        strip.background = element_rect(fill = "white"),
+        strip.text.y = element_text(face = "bold", angle = 0),
+        panel.spacing = unit(0,'lines'))
+
+uba_q + plot_spacer() + uba_c +
+  plot_layout(widths = c(.8, -.07, .6), nrow = 1)
+
+ggsave("UBA1568_Cmet_phylo.png", 
+       height = 10, width = 8)
+```
+
+```{r}
+msb_tree = read.tree("MSB-5A5_gtdbtk_tree/MSB-5A5.subset.gtdbtk.bac120.classify")
+
+gn15_tree = get_subtree_with_tips(msb_tree, paste0("MM_", unique(gn15$Name)))$subtree
+# uba_tree$root.edge <- .2
+
+msb_q = ggtree(gn15_tree, layout = "rectangular",
+               root.position = 1) +
+  # geom_tippoint(size = 2, aes(x=x+0.1)) +
+  geom_point2(aes(subset= node %in% c(22, 48, 47, 46)), 
+              colour = "firebrick3", size = 3, alpha = 0.7) +
+  geom_point2(aes(subset= node %in% c(22, 48, 47, 46)), 
+              colour = "black", size = 3, shape = 1) +
+  # geom_tiplab(align=TRUE, linesize=.5, linetype = "dotted") +
+  # geom_text(aes(label=node)) +
+  geom_tiplab(aes(label = ""), align=TRUE, linesize=.5, linetype = "dotted") +
+  geom_treescale(fontsize=6, linesize=2, offset=1,
+                 x = 1.1, y = -55) +
+  scale_x_ggtree() +
+  scale_y_reverse(expand = c(0,0.5))
+
+msb_mag_order = get_taxa_name(msb_q) %>% 
+  str_remove("MM_")
+
+msb_c = ggplot(msb_energy_all_data %>% 
+                 ungroup() %>% 
+         filter(
+           # metabolism %in% carbon_pathways &
+                  median_completeness > 0.5 &
+                  # completeness_na > 0 &
+                  order == "GN15" &
+                  !grepl("Methanogenesis", metabolism)),
+       aes(fct_relevel(metabolism, carbon_pathways), 
+           fct_relevel(Name, msb_mag_order),
+           fill = completeness*100)) +
+  geom_tile(colour = 'black') +
+  facet_grid(fct_relevel(family, c("DG-27", "UM-FILTER-46-8","4484-95","UBA10806", 
+                                   "DSPP01","RBG-1", "SM23-73-2","RBG-16-43-9","SM1-73", 
+                                   "JAJRUJ01", "WJJR01","JAHJOQ01", "JAABVY01", 
+                                   "CAIYYT01","JAAZOE01", "JACZUZ01", "PGXB01", "FEB-12")) ~ .,
+  scales = "free",
+  space = "free") +
+  scale_fill_viridis_c() +
+  guides(fill = guide_colorbar(title = "Median genus-level\npathway completeness (%)")) +
+  labs(x = "Genus", y = "Metabolic pathways") +
+  scale_x_discrete(expand = c(0,0), position = "top") +
+  scale_y_discrete(expand = c(0,0)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 0, vjust = 0),
+        axis.title.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank(),
+        strip.background = element_rect(fill = "white"),
+        strip.text.y = element_text(face = "bold", angle = 0),
+        panel.spacing = unit(0,'lines'))
+### highlight that this is median completeness!
+msb_q +  msb_c +
+  plot_layout(widths = c(.2, .6), nrow = 1)
+
+ggsave("MSB-5A5_Cmet_phylo.png",
+       height = 10, width = 16)
+```
+
+what parts of Glycolysis does UBA encode for?
+
+```{r}
+readxl::read_xlsx("UBA1568_DRAM_distill_111223/metabolism_summary.xlsx", sheet = 2) %>% 
+  filter(grepl("Glycolysis", module)) %>% 
+  gather("Name", "hits", -gene_id, -gene_description, -header, -subheader, -module) %>% 
+  mutate(hits_num = as.numeric(as.character(hits))) %>%
+  group_by(gene_description, Name, module) %>%
+  summarise(sum_hits = sum(hits_num)) %>%
+  filter(module == "Glycolysis (Embden-Meyerhof pathway), glucose => pyruvate") %>%
+  left_join(uba_gtdb, by = "Name") %>% 
+  ggplot(aes(Name, gene_description, fill = sum_hits)) +
+    geom_tile(colour = "white") +
+    facet_grid(. ~ family+genus, 
+               scales = "free", space = "free") +
+    guides(fill = guide_legend(title = "DRAM hits")) +
+    scale_fill_viridis_c(na.value = NA, 
+                         option = "magma", direction = -1) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+          axis.title = element_blank(),
+          strip.background = element_rect(fill = "white"),
+          strip.text.y = element_text(face = "bold", angle = 0))
+ggsave("UBA1568_Glycolysis.png", 
+       height = 5, width = 20)
+```
+
+
+
